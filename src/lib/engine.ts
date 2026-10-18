@@ -4,7 +4,7 @@ export type Sheet = Record<string, Field>;
 export type DiceResult = { rolls: number[]; kept: boolean[]; total: number };
 export type Resolution = {
   expression: string;
-  value: number | null;
+  value: number | boolean | null;
   rollable: boolean;
   dependencies: string[];
 };
