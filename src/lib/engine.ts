@@ -1,7 +1,7 @@
 import { all, ConditionalNode, create, type MathNode } from 'mathjs';
-export type Field = { id: string; formula: string };
+type Field = { id: string; formula: string };
 export type Sheet = Record<string, Field>;
-export type DiceResult = { rolls: number[]; kept: boolean[]; total: number };
+type DiceResult = { rolls: number[]; kept: boolean[]; total: number };
 export type Resolution = {
   expression: string;
   value: number | boolean | null;
@@ -24,7 +24,7 @@ function ident(c: string | undefined): boolean {
     ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || digit(c) || c === '_')
   );
 }
-export function normalizeDice(input: string): string {
+function normalizeDice(input: string): string {
   let out = '';
   for (let i = 0; i < input.length;) {
     if ((i === 0 || !ident(input[i - 1])) && digit(input[i])) {
