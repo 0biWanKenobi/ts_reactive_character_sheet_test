@@ -1,4 +1,5 @@
-import { all, create, type MathNode } from 'mathjs';
+import { all, create, type SymbolNode, type FunctionNode, type MathNode, type OperatorNodeFn } from 'mathjs';
+import type { ExtendedMathJsInstance } from '../../math';
 type Field = { id: string; formula: string };
 export type Sheet = Record<string, Field>;
 type DiceResult = { rolls: number[]; kept: boolean[]; total: number };
@@ -10,22 +11,15 @@ export type Resolution = {
 };
 export type RollOutcome = { total: number; dice: DiceResult[] };
 
-const math = create(all);
+const math = create(all) as ExtendedMathJsInstance;
 const functions = new Set(['floor', 'ceil', 'round', 'abs', 'min', 'max', 'sqrt', 'roll', 'dl', 'kh']);
-const operators = new Set(['add', 'subtract', 'multiply', 'divide', 'unaryMinus', 'unaryPlus', 'pow', 'mod', 'equal', 'larger', 'smaller', 'largerEq', 'smallerEq']);
+const operators: Set<OperatorNodeFn> = new Set(['add', 'subtract', 'multiply', 'divide', 'unaryMinus', 'unaryPlus', 'pow', 'mod', 'equal', 'larger', 'smaller', 'largerEq', 'smallerEq']);
 const constants = new Set(['pi', 'e']);
 const parseCache = new Map<string, MathNode>();
 const compileCache = new Map<string, ReturnType<MathNode['compile']>>();
 const MAX_FORMULA = 1024;
 
-const typed = math.typed as typeof math.typed & {
-  addType: (type: { name: string; test: (value: unknown) => boolean }) => void;
-  addConversion: (conversion: {
-    from: string;
-    to: string;
-    convert: (value: DiceResult) => number;
-  }) => void;
-};
+const typed = math.typed;
 
 // DiceResult is an internal type: 'rolls' uniquely identifies it in our evaluator.
 typed.addType({
@@ -33,7 +27,7 @@ typed.addType({
   test: (value): value is DiceResult =>
     value !== null && typeof value === 'object' && 'rolls' in value
 });
-typed.addConversion({
+typed.addConversion<DiceResult>({
   from: 'DiceResult',
   to: 'number',
   convert: (result) => result.total
@@ -74,10 +68,10 @@ export function validateId(id: string): string | null {
   return null;
 }
 
-function fnName(node: MathNode): string {
-  const fn = (node as MathNode & { fn: MathNode }).fn;
-  if (fn.type !== 'SymbolNode') throw Error('Unsupported function syntax');
-  return (fn as MathNode & { name: string }).name;
+function fnName(node: FunctionNode<MathNode>): string {
+  const fn = node.fn;
+  if (!math.isSymbolNode(fn)) throw Error('Unsupported function syntax');
+  return fn.name;
 }
 function parsed(formula: string): MathNode {
   if (formula.length > MAX_FORMULA) throw Error('Formula exceeds 1024 characters');
@@ -88,7 +82,7 @@ function parsed(formula: string): MathNode {
   ast.traverse((node) => {
     if (++count > 500) throw Error('Formula is too complex');
     if (node.type === 'OperatorNode') {
-      const op = (node as MathNode & { fn: string }).fn;
+      const op = node.fn;
       if (!operators.has(op)) throw Error(`Unsupported operator: ${op}`);
     } else if (node.type === 'FunctionNode') {
       if (!functions.has(fnName(node))) throw Error(`Unsupported function: ${fnName(node)}`);
