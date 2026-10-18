@@ -325,18 +325,26 @@ export function resolve(sheet: Sheet, id: string): Resolution {
     dependencies: [...dependencies],
   };
 }
+
 export function executeRoll(expression: string): RollOutcome {
   const ast = parsed(expression);
   const diceLog: DiceResult[] = [];
-  const total = toBaseType(
-    evaluateNode(
-      ast,
-      (name) => {
-        throw Error(`Unresolved field: ${name}`);
-      },
-      diceLog,
-      true
-    )
+
+  const result = evaluateNode(
+    ast,
+    name => {
+      throw Error(`Unresolved field: ${name}`);
+    },
+    diceLog,
+    true
   );
-  return { total, dice: diceLog };
+
+  if (typeof result === 'boolean') {
+    throw Error('Roll expressions must produce a numeric result');
+  }
+
+  return {
+    total: finite(numeric(result)),
+    dice: diceLog
+  };
 }
