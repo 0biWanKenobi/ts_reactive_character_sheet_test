@@ -1,4 +1,4 @@
-import { all, create, type MathNode } from 'mathjs';
+import { all, ConditionalNode, create, type MathNode } from 'mathjs';
 export type Field = { id: string; formula: string };
 export type Sheet = Record<string, Field>;
 export type DiceResult = { rolls: number[]; kept: boolean[]; total: number };
@@ -10,8 +10,8 @@ export type Resolution = {
 };
 export type RollOutcome = { total: number; dice: DiceResult[] };
 const math = create(all);
-const functions = new Set(['floor','ceil','round','abs','min','max','sqrt','roll','dl','kh']);
-const operators = new Set(['add','subtract','multiply','divide','unaryMinus','unaryPlus','pow','mod']);
+const functions = new Set(['floor', 'ceil', 'round', 'abs', 'min', 'max', 'sqrt', 'roll', 'dl', 'kh']);
+const operators = new Set(['add', 'subtract', 'multiply', 'divide', 'unaryMinus', 'unaryPlus', 'pow', 'mod', 'equal', 'larger', 'smaller', 'largerEq', 'smallerEq']);
 const constants: Record<string, number> = { pi: Math.PI, e: Math.E };
 const parseCache = new Map<string, MathNode>();
 const MAX_FORMULA = 1024;
@@ -76,6 +76,7 @@ function parsed(formula: string): MathNode {
         'ConstantNode',
         'SymbolNode',
         'ParenthesisNode',
+        'ConditionalNode',
       ].includes(node.type)
     ) {
       throw Error(`Unsupported syntax: ${node.type}`);
@@ -124,16 +125,20 @@ function selectDice(
   for (let i = 0; i < amount; i++) kept[order[i]] = mode === 'kh';
   return { rolls: [...value.rolls], kept, total: sum(value.rolls, kept) };
 }
-function numeric(v: number | DiceResult): number { 
-  return typeof v === 'number'
-    ? v
-    : v.total; 
+function numeric(v: number | boolean | DiceResult): number {
+  switch (typeof v) {
+    case 'number':
+    case 'boolean':
+      return Number(v);
+    default:
+      return v.total;
+  }
 }
 function finite(v: number): number {
   if (!Number.isFinite(v)) throw Error('Non-finite result');
   return v;
 }
-type Value = number | DiceResult;
+type Value = number | boolean | DiceResult;
 function evaluateNode(
   ast: MathNode,
   scope: (name: string) => number,
@@ -141,8 +146,23 @@ function evaluateNode(
   allowDice: boolean
 ): Value {
   switch (ast.type) {
+    case 'ConditionalNode': {
+      const n = ast as ConditionalNode;
+      const conditionValue = evaluateNode(
+        n.condition,
+        scope,
+        diceLog,
+        allowDice
+      );
+      return evaluateNode(
+        conditionValue ? n.trueExpr : n.falseExpr,
+        scope,
+        diceLog,
+        allowDice
+      );
+    }
     case 'ConstantNode':
-      return (ast as MathNode & { value: unknown }).value;
+      return (ast as MathNode & { value: number | boolean }).value;
     case 'SymbolNode': {
       const name = (ast as MathNode & { name: string }).name;
       return Object.hasOwn(constants, name) ? constants[name] : scope(name);
@@ -176,6 +196,14 @@ function evaluateNode(
           return -args[0];
         case 'unaryPlus':
           return args[0];
+        case 'larger':
+          return args[0] > args[1];
+        case 'smaller':
+          return args[0] < args[1];
+        case 'smallerEq':
+          return args[0] <= args[1];
+        case 'largerEq':
+          return args[0] >= args[1];
       }
       throw Error('Unsupported operator' + node.fn);
     }
@@ -196,7 +224,8 @@ function evaluateNode(
       if (fn === 'dl' || fn === 'kh') {
         if (
           args.length !== 2 ||
-          typeof args[0] === 'number'
+          typeof args[0] === 'number' ||
+          typeof args[0] === 'boolean'
         )
           throw Error(`${fn} requires a dice result and a count`);
         const result = selectDice(args[0], numeric(args[1]), fn);
@@ -226,8 +255,10 @@ function evaluateNode(
   }
   throw Error(`Unsupported syntax: ${ast.type}`);
 }
-function toNumber(value: Value): number { 
-  return finite(numeric(value)); 
+function toBaseType(value: Value): number | boolean {
+  return typeof value === "boolean"
+    ? value
+    : finite(numeric(value));
 }
 function rollable(ast: MathNode): boolean {
   let hasDice = false;
@@ -275,7 +306,7 @@ export function resolve(sheet: Sheet, id: string): Resolution {
   const hasDice = rollable(ast);
   const value = hasDice
     ? null
-    : toNumber(
+    : toBaseType(
       evaluateNode(
         ast,
         () => {
@@ -295,7 +326,7 @@ export function resolve(sheet: Sheet, id: string): Resolution {
 export function executeRoll(expression: string): RollOutcome {
   const ast = parsed(expression);
   const diceLog: DiceResult[] = [];
-  const total = toNumber(
+  const total = toBaseType(
     evaluateNode(
       ast,
       (name) => {

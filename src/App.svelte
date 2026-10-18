@@ -11,7 +11,8 @@
     BONUS_ATTACK: { id: 'BONUS_ATTACK', formula: 'ATTACK + 1' },
     DAMAGE: { id: 'DAMAGE', formula: '3d6 + STR_MOD' },
     DROP_LOWEST: { id: 'DROP_LOWEST', formula: 'dl(3d6, 1) + STR_MOD' },
-    KEEP_HIGHEST: { id: 'KEEP_HIGHEST', formula: 'kh(4d8, 2) + PROF' }
+    KEEP_HIGHEST: { id: 'KEEP_HIGHEST', formula: 'kh(4d8, 2) + PROF' },
+    BOOLEAN: { id: 'BOOL_CHECK', formula: 'STR > 19'}
   };
   let sheet = $state<Sheet>(structuredClone(defaults));
   let newId = $state('');
