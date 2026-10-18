@@ -196,6 +196,8 @@ function evaluateNode(
           return -args[0];
         case 'unaryPlus':
           return args[0];
+        case 'equal':
+            return args[0] === args[1];
         case 'larger':
           return args[0] > args[1];
         case 'smaller':
