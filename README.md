@@ -1,41 +1,42 @@
 # Reactive RPG Formula Sheet — Rust/WASM + Chumsky
 
-The expression parser and evaluator are written in Rust with Chumsky and compiled
-to WebAssembly with wasm-bindgen. Svelte 5 keeps the existing per-field reactive
-resolution and click-to-roll behavior.
+The Svelte app uses [@0biwankenobi/dice-wasm](https://www.npmjs.com/package/@0biwankenobi/dice-wasm)
+from [dice-wasm](https://github.com/0biWanKenobi/dice-wasm).
+There is no embedded Rust crate or local WebAssembly build in this repository.
 
-## Setup
+## Install and run
 
-1. `cd wasm && docker compose run --rm build`
-2. `cd .. && npm install`
-3. `npm run check && npm run build && npm run dev`
+Once version 0.1.0 has been published:
 
-The `wasm/pkg` directory is a generated, gitignored wasm-pack package.
-Rebuild after Rust changes.
+```sh
+npm install
+npm run check
+npm run build
+npm run dev
+```
 
-## Syntax
+The upstream project compiles its browser-compatible WASM package with
+wasm-pack (`bundler` target) and publishes it to npm via version tags.
+The generated `.wasm` and JavaScript glue code come from npm.
 
-- References require braces: `{STR}`, `{STR_MOD}`. Bare variable names are invalid.
-- Dice: `3d6`, `({STR})d({PROF}+4)`, `kh(4d8, 2)`, `dl(3d6, 1)`.
-- Arithmetic: `+ - * / ^ %`, comparisons: `> < >= <= == !=`.
-- Functions: `floor`, `ceil`, `round`, `abs`, `sqrt`, `min`, `max`.
-- Conditional: `condition ? whenTrue : whenFalse`.
+## Syntax and behavior
 
-## Architecture
+- References are delimited, e.g. `{STR}`, `{STR_MOD}`.
+- Dice `3d6`, `({STR})d({PROF}+4)`, `kh(4d8,2)`, `dl(3d6,1)`.
+- `+ - * / ^ %`, comparisons, ternaries and built-in math functions.
+- Svelte 5 `$derived.by()` reads nested sheet dependencies recursively.
+- Cycles and unknown references are detected by the TypeScript adapter.
+- Rolls occur only on user action, with kept/dropped roll details.
+- Compiled formula objects are cached with bounded eviction.
 
-Each FieldRow retains its `$derived.by()`. `resolve()` recursively reads the
-reactive sheet fields, detects circular and missing references, and expands
-referenced expressions before compiling the aggregate expression in WASM.
-Dice expressions are never evaluated during reactive updates; a Roll click
-evaluates them explicitly. The WASM evaluator returns kept/dropped roll flags.
-Compiled formula objects are cached and freed on eviction.
+## Package release prerequisite
 
-The JavaScript-to-WASM calls are per compiled expression, not per variable.
-Expanded formulas are parsed again when their contents change; the original
-formula sources are cached. This is intended as a feature-parity migration,
-not a claim of improved benchmark performance.
+The first npm release has to be bootstrapped under an npm account that
+controls the scope `@0biwankenobi`, then the trusted publisher must
+be configured for GitHub repository `0biWanKenobi/dice-wasm`, workflow
+`release.yml`, with permission for direct `npm publish`. The upstream
+workflow uses npm OIDC; no permanent npm token is required afterwards.
 
-## Testing
-
-The Rust crate has not been compiled in this environment because Rust and
-Docker are unavailable. Run the Docker build and then the Svelte checks.
+Until the upstream package exists in npm, installation of this branch will
+fail. After the initial release, regenerate and commit `package-lock.json`
+using `npm install`.
