@@ -1,4 +1,4 @@
-import { CompiledFormula } from '../../wasm/pkg/chumsky_dice';
+import { CompiledFormula } from '@0biwankenobi/dice-wasm';
 
 export type Field = { id: string; formula: string };
 export type Sheet = Record<string, Field>;
