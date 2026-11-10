@@ -9,7 +9,7 @@
   let rollError = $state('');
   function roll() {
     if (!result.data) return;
-    try { lastRoll = executeRoll(result.data.expression); rollError = ''; }
+    try { lastRoll = executeRoll(sheet, id); rollError = ''; }
     catch (error) { rollError = error instanceof Error ? error.message : String(error); }
   }
 </script>

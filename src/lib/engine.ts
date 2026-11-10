@@ -1,9 +1,9 @@
-import { CompiledFormula } from '@0biwankenobi/dice-wasm';
+import { CompiledFormula, FormulaContext } from '@0biwankenobi/dice-wasm';
 
-export type Field = { id: string; formula: string };
+type Field = { id: string; formula: string };
 export type Sheet = Record<string, Field>;
-export type DiceResult = { rolls: number[]; kept: boolean[]; total: number };
-export type Resolution = {
+type DiceResult = { rolls: number[]; kept: boolean[]; total: number };
+type Resolution = {
   expression: string;
   value: number | boolean | null;
   rollable: boolean;
@@ -12,21 +12,27 @@ export type Resolution = {
 export type RollOutcome = { total: number; dice: DiceResult[] };
 
 type WasmOutcome = { value: number | boolean; dice: DiceResult[] };
-const cache = new Map<string, CompiledFormula>();
+type CachedFormula = { compiled: CompiledFormula; dependencies: string[] };
+type SheetContext = { wasm: FormulaContext; sources: Map<string, string> };
+const cache = new Map<string, CachedFormula>();
+const contexts = new WeakMap<Sheet, SheetContext>();
 const CACHE_LIMIT = 512;
 const MAX_FORMULA = 1024;
-const MAX_EXPANDED = 65536;
+const MAX_DEPTH = 128;
+const MAX_VISITS = 100_000;
 
-function compile(source: string): CompiledFormula {
+function compile(source: string): CachedFormula {
   const previous = cache.get(source);
   if (previous) return previous;
+  if (source.length > MAX_FORMULA) throw Error('Formula exceeds 1024 characters');
   const compiled = new CompiledFormula(source);
+  const entry = { compiled, dependencies: compiled.dependencies() as string[] };
   if (cache.size >= CACHE_LIMIT) {
-    for (const old of cache.values()) old.free();
+    for (const old of cache.values()) old.compiled.free();
     cache.clear();
   }
-  cache.set(source, compiled);
-  return compiled;
+  cache.set(source, entry);
+  return entry;
 }
 
 export function validateId(id: string): string | null {
@@ -34,49 +40,61 @@ export function validateId(id: string): string | null {
     ? null : 'Use letters, digits, and underscores; start with a letter or underscore';
 }
 
-export function resolve(sheet: Sheet, id: string): Resolution {
-  const expandedCache = new Map<string, string>();
-  const dependencies = new Set<string>();
-  const stack: string[] = [];
-
-  function expand(name: string): string {
-    const cycle = stack.indexOf(name);
-    if (cycle !== -1) {
-      throw Error('Circular reference: ' + [...stack.slice(cycle), name].join(' → '));
-    }
-    const field = sheet[name];
-    if (!field) throw Error('Unknown field: ' + name);
-    const previous = expandedCache.get(name);
-    if (previous !== undefined) return previous;
-    const formula = field.formula;
-    if (formula.length > MAX_FORMULA) throw Error('Formula exceeds 1024 characters');
-    const references = compile(formula).dependencies() as string[];
-
-    stack.push(name);
-    try {
-      let expanded = formula;
-      for (const ref of references) {
-        dependencies.add(ref);
-        const replacement = '(' + expand(ref) + ')';
-        expanded = expanded.replaceAll('{' + ref + '}', replacement);
-        if (expanded.length > MAX_EXPANDED) throw Error('Expanded formula is too large');
-      }
-      expandedCache.set(name, expanded);
-      return expanded;
-    } finally {
-      stack.pop();
-    }
+function synchronize(sheet: Sheet, id: string): FormulaContext {
+  let context = contexts.get(sheet);
+  if (!context) {
+    context = { wasm: new FormulaContext(), sources: new Map() };
+    contexts.set(sheet, context);
   }
-  const expression = expand(id);
-  dependencies.delete(id);
-  const formula = compile(expression);
-  const rollable = formula.rollable();
-  const value = rollable ? null : (formula.evaluate() as WasmOutcome).value;
-  return { expression, value, rollable, dependencies: [...dependencies] };
+  const { wasm, sources } = context;
+
+  const visited = new Set<string>();
+  let visits = 0;
+  function visit(name: string, depth: number) {
+    if (++visits > MAX_VISITS || depth >= MAX_DEPTH) {
+      throw Error('Reference graph is too complex');
+    }
+    if (visited.has(name)) return;
+    visited.add(name);
+    if (!Object.hasOwn(sheet, name)) {
+      wasm.remove(name);
+      sources.delete(name);
+      throw Error('Unknown field: ' + name);
+    }
+    // Read every reachable source here, inside the caller's $derived, so Svelte
+    // tracks edits even when Rust already owns the compiled expression tree.
+    const source = sheet[name].formula;
+    const entry = compile(source);
+    if (sources.get(name) !== source) {
+      wasm.set(name, entry.compiled);
+      sources.set(name, source);
+    }
+    for (const reference of entry.dependencies) visit(reference, depth + 1);
+  }
+  visit(id, 0);
+  return wasm;
 }
 
-export function executeRoll(expression: string): RollOutcome {
-  const output = compile(expression).roll() as WasmOutcome;
+export function deleteField(sheet: Sheet, id: string) {
+  const context = contexts.get(sheet);
+  context?.wasm.remove(id);
+  context?.sources.delete(id);
+  delete sheet[id];
+}
+
+export function releaseSheet(sheet: Sheet) {
+  contexts.get(sheet)?.wasm.free();
+  contexts.delete(sheet);
+}
+
+export function resolve(sheet: Sheet, id: string): Resolution {
+  const result = synchronize(sheet, id).resolve(id) as Resolution;
+  result.value ??= null;
+  return result;
+}
+
+export function executeRoll(sheet: Sheet, id: string): RollOutcome {
+  const output = synchronize(sheet, id).roll(id) as WasmOutcome;
   if (typeof output.value !== 'number') {
     throw Error('Roll expressions must produce a numeric result');
   }
