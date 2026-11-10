@@ -276,3 +276,49 @@ impl CompiledFormula {
             .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_nested_dice_operands() {
+        let expr = parse("({STR}+2)d(max(6,{DEX}))").unwrap();
+        let mut refs = BTreeSet::new();
+        let mut rollable = false;
+        gather(&expr, &mut refs, &mut rollable);
+        assert!(rollable);
+        assert_eq!(refs.into_iter().collect::<Vec<_>>(), vec!["DEX", "STR"]);
+    }
+
+    #[test]
+    fn parses_nested_functions_and_comparisons() {
+        let expr = parse("min(kh(4d8,2),floor(({STR}-10)/2)) > 3").unwrap();
+        let mut refs = BTreeSet::new();
+        let mut rollable = false;
+        gather(&expr, &mut refs, &mut rollable);
+        assert!(rollable);
+        assert!(refs.contains("STR"));
+    }
+
+    #[test]
+    fn bare_references_are_rejected() {
+        assert!(parse("STR + 2").is_err());
+        assert!(parse("{STR} + 2").is_ok());
+    }
+
+    #[test]
+    fn deterministic_math_and_boolean_results() {
+        let ast = parse("min(3,7,4) + 2 * 4").unwrap();
+        let value = evaluate(&ast, &mut vec![], false).unwrap();
+        assert_eq!(value.number(&[]).unwrap(), 11.0);
+        let comparison = parse("3 < 4").unwrap();
+        assert!(matches!(evaluate(&comparison, &mut vec![], false).unwrap(), Value::Bool(true)));
+    }
+
+    #[test]
+    fn dice_cannot_roll_during_normal_evaluation() {
+        let ast = parse("3d8 + 1").unwrap();
+        assert!(evaluate(&ast, &mut vec![], false).is_err());
+    }
+}
