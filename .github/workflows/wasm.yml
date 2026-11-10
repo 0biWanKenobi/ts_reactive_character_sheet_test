@@ -18,6 +18,9 @@ jobs:
           workspaces: wasm
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
+      - name: Test Rust expression engine
+        working-directory: wasm
+        run: cargo test
       - name: Build browser WASM package
         working-directory: wasm
         run: wasm-pack build --release --target bundler --out-dir pkg --out-name chumsky_dice
