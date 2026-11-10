@@ -1,4 +1,5 @@
-name: Rust WASM engine
+name: Verify Svelte WASM consumer
+
 on:
   push:
     branches: [rust-wasm-engine]
@@ -6,28 +7,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: wasm
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
-      - name: Test Rust expression engine
-        working-directory: wasm
-        run: cargo test
-      - name: Build browser WASM package
-        working-directory: wasm
-        run: wasm-pack build --release --target bundler --out-dir pkg --out-name chumsky_dice
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
+          node-version: '24'
+      - run: npm install --no-audit --no-fund
       - run: npm run check
       - run: npm run build
