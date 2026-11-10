@@ -1,0 +1,12 @@
+services:
+  build:
+    build: .
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - cargo-cache:/usr/local/cargo/registry
+      - rust-target:/workspace/target
+    command: ["wasm-pack", "build", "--release", "--target", "bundler", "--out-dir", "pkg", "--out-name", "chumsky_dice"]
+volumes:
+  cargo-cache:
+  rust-target:
